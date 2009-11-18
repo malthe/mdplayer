@@ -10,6 +10,11 @@ Playlist file example::
   Kraftwerk - Ohm Sweet Ohm
   Animal Collective - Also Frightened
 
+To schedule playlist::
+
+  $ chmod +x mdplayer.py
+  $ mdplayer.py playlist.txt
+
 The scheduler will use the system ``mdfind`` and ``mdlist`` services
 to locate music files that match the queries.
 
