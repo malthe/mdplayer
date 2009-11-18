@@ -15,7 +15,7 @@ To schedule playlist::
   $ chmod +x mdplayer.py
   $ mdplayer.py playlist.txt
 
-The scheduler will use the system ``mdfind`` and ``mdlist`` services
+The scheduler will use the system ``mdfind`` and ``mdls`` services
 to locate music files that match the queries.
 
 The default music player is `Vox <http://www.voxapp.uni.cc/>`_. Use
