@@ -30,9 +30,9 @@
 import os
 import re
 import cmd
-import commands
 import threading
 import optparse
+import subprocess
 
 usage = "Usage: %prog [options] playlist\n" \
         "Format is line-terminated track queries (e.g. \"Nine Inch Nails - Heresy\")."
@@ -49,14 +49,16 @@ except:
     parser.error("must provide playlist argument.")
 
 re_kmd = re.compile(r'(\w+)\s*=\s*(?:["\']*)([^"\']+)')
-spotlight_keys = 'kMDItemAlbum', 'kMDItemTitle', 'kMDItemDurationSeconds'
 cmd_list = "mdls"
 cmd_find = "mdfind"
-cmd_play = "open -g -a %s" % options.application
-args = " ".join("-name %s" % key for key in spotlight_keys)
+cmd_play = "open", "-g", "-a", options.application
+args = "-name", "kMDItemAlbum", "-name", "kMDItemTitle", "-name", "kMDItemDurationSeconds"
 
 tracks = [track.strip('\n ') for track in open(source).readlines()]
 tracks = filter(None, tracks)
+
+def shellquote(s):
+    return "'" + s.replace("'", "'\\''") + "'"
 
 class Queue(threading.Thread):
     def __init__(self, event):
@@ -65,12 +67,13 @@ class Queue(threading.Thread):
         self.event = event
 
     def play(self, track):
-        track = track.strip().replace('-', ' ')
+        process = subprocess.Popen((cmd_find, track.strip().replace('-', ' ')),
+                                   stdout=subprocess.PIPE, shell=False)
+        output = process.communicate()[0]
 
-        # find file
-        status, output = commands.getstatusoutput("%s '%s'" % (cmd_find, track))
-        if status != 0:
-            print output.decode('utf-8')
+        if process.returncode:
+            print "Unable to find %s: %s" % (repr(track), output.decode('utf-8'))
+            return
         else:
             filenames = output.split('\n')
             for filename in filenames:
@@ -80,48 +83,51 @@ class Queue(threading.Thread):
             else:
                 return
 
-            # extract metadata
-            status, output = commands.getstatusoutput("%s %s '%s'" % (cmd_list, args, filename))
-            if status != 0:
-                print output.decode('utf-8')
+            process = subprocess.Popen((cmd_list,) + args + (filename,),
+                                       stdout=subprocess.PIPE, shell=False)
+            output = process.communicate()[0]
+
+            if process.returncode:
+                print 'Unable to query "%s": %s' % (filename, output)
             else:
                 d = {}
                 for line in output.split('\n'):
-                    key, value = re_kmd.match(line).groups()
-                    d[key] = value
+                    m = re_kmd.match(line)
+                    if m is not None:
+                        key, value = m.groups()
+                        d[key] = value
 
                 try:
                     album = d['kMDItemAlbum']
                     title = d['kMDItemTitle']
                     length = float(d['kMDItemDurationSeconds'])
-                except ValueError, e:
-                    print "Skipped %s (%s)." % (filename, e)
-                    self.number += 1
-                    return
+                except (KeyError, ValueError), e:
+                    print "Skipped %s (%s: %s)." % (filename, type(e).__name__, e)
+                else:
+                    subprocess.call(cmd_play + (filename,))
 
-                # play music
-                status, output = commands.getstatusoutput("%s '%s'" % (cmd_play, filename))
-
-                # we the track plays until the end, jump to next
-                if self.event.wait(length):
-                    self.number += 1
-                self.event.clear()
+                    # we the track plays until the end, jump to next
+                    self.event.wait(length)
+                    self.event.clear()
+                    return True
 
     def again(self):
-        self.event.set()
-
-    def next(self):
-        self.number += 1
-        self.event.set()
-
-    def prev(self):
         self.number -= 1
         self.event.set()
 
+    def next(self):
+        self.event.set()
+
+    def prev(self):
+        self.number -= 2
+        self.event.set()
+
     def run(self):
-        while self.number is not None:
-            self.number = self.number % len(tracks)
-            self.play(tracks[self.number])
+        while tracks and self.number is not None:
+            number = self.number % len(tracks)
+            self.number += 1
+            if not self.play(tracks[number]):
+                del tracks[number]
 
     def stop(self):
         self.number = None
