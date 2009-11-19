@@ -108,7 +108,7 @@ class Queue(threading.Thread):
                 except (KeyError, ValueError), e:
                     print "Skipped %s (%s: %s)." % (filename, type(e).__name__, e)
                 else:
-                    subprocess.call(cmd_play + (filename,))
+                    process = subprocess.Popen(cmd_play + (filename,))
 
                     # we the track plays until the end, jump to next
                     self.event.wait(length)
