@@ -126,6 +126,10 @@ class Queue(threading.Thread):
         self.number -= 2
         self.event.set()
 
+    def jump(self, number):
+        self.number = number
+        self.event.set()
+
     def sync(self):
         mtime = os.path.getmtime(self.filename)
         if self._last_read == mtime:
@@ -156,6 +160,26 @@ class Console(cmd.Cmd):
     def emptyline(self):
         pass
 
+    def precmd(self, line):
+        try:
+            number = int(line)
+        except ValueError:
+            return line
+        return "j %d" % number
+
+    def do_j(self, message):
+        try:
+            number = int(message)
+        except ValueError:
+            print "Not an integer: %s." % message
+        self.queue.jump(number-1)
+
+    def do_l(self, message):
+        padding = len(str(len(self.queue.tracks)))
+        print "\n".join(
+            ("%%#0%dd %%s" % padding) % (i+1, track)
+            for (i, track) in enumerate(self.queue.tracks))
+
     def do_p(self, message):
         self.queue.prev()
 
@@ -170,7 +194,9 @@ class Console(cmd.Cmd):
         return 1
 
 if __name__ == "__main__":
-    print "PLAY: p - previous; n - next; r - repeat; q - quit."
+    print "PLAY: p - previous; n - next; j - jump; r - repeat; l - list; q - quit."
+    print "      jump to any track by entering its track number."
+    print "-----------------------------------------------------------------------"
 
     console = Console(filename)
     console.cmdloop()
