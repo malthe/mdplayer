@@ -44,7 +44,7 @@ parser.add_option("-a", "--application", dest="application",
 (options, args) = parser.parse_args()
 
 try:
-    source = args[0]
+    filename = args[0]
 except:
     parser.error("must provide playlist argument.")
 
@@ -54,17 +54,21 @@ cmd_find = "mdfind"
 cmd_play = "open", "-g", "-a", options.application
 args = "-name", "kMDItemAlbum", "-name", "kMDItemTitle", "-name", "kMDItemDurationSeconds"
 
-tracks = [track.strip('\n ') for track in open(source).readlines()]
-tracks = filter(None, tracks)
+def read(filename):
+    tracks = [track.strip('\n ') for track in open(filename).readlines()]
+    return filter(None, tracks)
 
 def shellquote(s):
     return "'" + s.replace("'", "'\\''") + "'"
 
 class Queue(threading.Thread):
-    def __init__(self, event):
+    _last_read = None
+
+    def __init__(self, event, filename):
         super(Queue, self).__init__()
         self.number = 0
         self.event = event
+        self.filename = filename
 
     def play(self, track):
         process = subprocess.Popen((cmd_find, track.strip().replace('-', ' ')),
@@ -122,22 +126,31 @@ class Queue(threading.Thread):
         self.number -= 2
         self.event.set()
 
+    def sync(self):
+        mtime = os.path.getmtime(self.filename)
+        if self._last_read == mtime:
+            return
+        self._last_read = mtime
+        self.tracks = read(self.filename)
+
     def run(self):
-        while tracks and self.number is not None:
-            number = self.number % len(tracks)
+        self.sync()
+        while self.tracks and self.number is not None:
+            number = self.number % len(self.tracks)
             self.number += 1
-            if not self.play(tracks[number]):
-                del tracks[number]
+            if not self.play(self.tracks[number]):
+                del self.tracks[number]
+            self.sync()
 
     def stop(self):
         self.number = None
         self.event.set()
 
 class Console(cmd.Cmd):
-    def __init__(self):
+    def __init__(self, filename):
         cmd.Cmd.__init__(self)
         self.event = threading.Event()
-        self.queue = Queue(self.event)
+        self.queue = Queue(self.event, filename)
         self.queue.start()
 
     def emptyline(self):
@@ -159,6 +172,6 @@ class Console(cmd.Cmd):
 if __name__ == "__main__":
     print "PLAY: p - previous; n - next; r - repeat; q - quit."
 
-    console = Console()
+    console = Console(filename)
     console.cmdloop()
     console.queue.join()
